@@ -57,7 +57,7 @@
         (gop (group-operator g))
         (ie nil))
     (dolist (e1 gset)
-      (let ((res '()))
+      (let ((res (list)))
         (dolist (e2 gset)
           (if (commutative gop e1 e2)
             (push (if (equal (funcall gop e1 e2) e2)
