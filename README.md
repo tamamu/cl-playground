@@ -1,20 +1,18 @@
-# cl-playground
+# CL-PLAYGROUND
 
-##### nabeatsu
+CLで書いた何か。
 
+##### NABEATSU  
 ナベアツ算
 
 
-##### auto-differential
-
+##### AUTO-DIFFERENTIAL*  
 自動微分(途中)
 
 
-##### group-theory
-
+##### GROUP-THEORY  
 群論
 
 
-##### cover
-
-被覆
+##### COVER*  
+被覆(途中)
