@@ -9,11 +9,16 @@
         :eazy-gnuplot))
 (in-package :fitting)
 
+(plan 7)
 
 (defun noise ()
   "Make normally distributed noise."
   (* (sqrt (* -2.0 (log (random 1.0))))
      (sin (* 2.0 pi (random 1.0)))))
+
+(ok (< 0 (noise) 1))
+
+;;;;;
 
 (defun graph-from (f len)
   "Make a vector represents a graph from function and length."
@@ -23,11 +28,21 @@
             (funcall f)))
     res))
 
+(defvar acc 0)
+(defun accumulator () (incf acc))
+(is (graph-from #'accumulator 5) #(1 2 3 4 5) :test #'equalp)
+
+;;;;;
+
 (defun power-series (x w)
   "Calc the power series represented with x and w;
    where w are coefficients."
   (loop for i from 0 below (length w)
         sum (* (aref w i) (expt x i))))
+
+(is (power-series 5 #(2 3 5)) (+ 2 (* 3 5) (* 5 (expt 5 2))))
+
+;;;;;
 
 ;; w is weight MxM matrix (2D-array)
 ;; y is values 1xM vector (1D-array)
@@ -50,6 +65,20 @@
              (setf (aref y i) (/ d (aref w i i))))
     y))
 
+(is (solve
+     (make-array
+      '(4 4)
+      :initial-contents
+      '((1 -2 3 -4)
+        (-2 5 8 -3)
+        (5 4 7 1)
+        (9 7 3 5)))
+     #(5 9 -1 4))
+    #(1 3 -2 -4)
+    :test #'equalp)
+
+;;;;;
+
 ;; xv is observed values vector
 ;; yv is observed values vector corresponding to xv
 ;; m is order number
@@ -69,8 +98,16 @@
                          sum (* (expt (aref xv k) i) (aref yv k)))))
     (solve Aij Ti)))
 
+(is (curve-fit #(1 4 6 7 11) #(1 16 36 49 121) 3) #(0 0 1 0) :test #'equalp)
+
+;;;;;
+
 (defun arange (x y z)
   (loop for i from x to y by z collect i))
+
+(is (arange 0 10 2) '(0 2 4 6 8 10) :test #'equalp)
+
+;;;;;
 
 (defun arangev (x y z)
   (let ((v (make-array 1 :element-type 'float
@@ -79,6 +116,12 @@
     (loop for i from x to y by z
           do (vector-push-extend i v))
     v))
+
+(is (arangev 1 4 0.5) #(1 1.5 2 2.5 3 3.5 4) :test #'equalp)
+
+;;;;;
+
+(finalize)
 
 (defun main (N)
          ;; Sine curve
@@ -97,7 +140,7 @@
                             collect (loop for x in x-real
                                           collect (power-series x w)))))
 
-    (with-plots (*standard-output* :debug t)
+    (with-plots (*standard-output* :debug nil)
       (gp-setup :output #p"fitting.png"
                 :terminal '(pngcairo background rgb "gray")
                 :title (format nil "Polynomial curve fitting (N=~D)" N)
