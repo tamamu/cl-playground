@@ -190,7 +190,7 @@
             :using '(1 2)
             :title "M_R=9"
             :with '(:lines)
-            :linewidth 1))))
+            :linewidth 3))))
 
 (main 12)
 
