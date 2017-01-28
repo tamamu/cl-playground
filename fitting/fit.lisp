@@ -82,7 +82,8 @@
 ;; xv is observed values vector
 ;; yv is observed values vector corresponding to xv
 ;; m is order number
-(defun curve-fit (xv yv m)
+;; p is penalty
+(defun curve-fit (xv yv m &optional (p 0))
   "Return fitted curve's coefficients by Polynomial curve fitting."
   (let* ((n (length yv))
          (Aij (make-array `(,(1+ m) ,(1+ m))))
@@ -96,6 +97,10 @@
           do (setf (aref Ti i)
                    (loop for k from 0 below n
                          sum (* (expt (aref xv k) i) (aref yv k)))))
+    (unless (zerop p)
+      (let ((ln (coerce (exp p) 'float)))
+        (loop for i from 0 below (1+ m)
+              do (incf (aref Aij i i) ln))))
     (solve Aij Ti)))
 
 (is (curve-fit #(1 4 6 7 11) #(1 16 36 49 121) 3) #(0 0 1 0) :test #'equalp)
@@ -136,9 +141,13 @@
          ;; Results
          (wlist (loop for M across #(0 1 3 9)
                       collect (curve-fit x-train y-train M)))
+         (w-regular (curve-fit x-train y-train 9 -10))
+
          (y-estimates (loop for w in wlist
                             collect (loop for x in x-real
-                                          collect (power-series x w)))))
+                                          collect (power-series x w))))
+         (y-regular (loop for x in x-real
+                          collect (power-series x w-regular))))
 
     (with-plots (*standard-output* :debug nil)
       (gp-setup :output #p"fitting.png"
@@ -173,7 +182,15 @@
                      :using '(1 2)
                      :title (format nil "M=~A" M)
                      :with '(:lines)
-                     :linewidth 2)))))
+                     :linewidth 2))
+      (plot (lambda ()
+              (loop for x in x-real
+                    for y in y-regular
+                    do (format t "~&~F ~F" x y)))
+            :using '(1 2)
+            :title "M_R=9"
+            :with '(:lines)
+            :linewidth 1))))
 
 (main 12)
 
