@@ -1,0 +1,100 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#| Send new free books information of packthub to my Slack.
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+       #+quicklisp (ql:quickload
+                    '(:dexador
+                      :plump
+                      :clss
+                      :uiop)
+                    :silent t))
+
+(defpackage :ros.script.packt.3696384011
+  (:use :cl))
+(in-package :ros.script.packt.3696384011)
+
+(defparameter +token+ (uiop:getenv "SLACK_TOKEN"))
+(defparameter +url+ "https://www.packtpub.com/packt/offers/free-learning")
+(defparameter +html+ (dex:get +url+))
+(defparameter +tree+ (plump:parse +html+))
+(defparameter +aseq+
+  (clss:select "a"
+    (aref (plump:children
+           (aref (plump:children
+                  (aref (clss:select "#content div" +tree+)
+                        8))
+                 5))
+          3)))
+
+(defparameter cache-path (merge-pathnames "data.cache" (truename "./")))
+
+(defparameter cache
+  (if (probe-file cache-path)
+      (with-open-file (in cache-path :direction :input)
+        (read in nil))
+      nil))
+
+(defun save-cache (s)
+  (with-open-file (out cache-path :direction :output :if-exists :supersede)
+    (print s out)))
+
+(defun get-day (e)
+  (plump:text
+   (aref (clss:select "div.fl-notavailable-text" e)
+         0)))
+
+(defun get-img (e)
+  (plump:attribute
+   (aref (clss:select "img.bookimage" e) 0)
+   "src"))
+
+(defun get-href (e)
+  (plump:attribute e "href"))
+
+(defun diff (old new)
+  (if (/= (length old) (length new))
+      new
+      (loop for o in old
+            for n in new
+            when (string/= (cdr o) (cdr n))
+            collect n)))
+
+(defun post-message (channel text token)
+  (dex:post "https://slack.com/api/chat.postMessage"
+            :content `(("token" . ,token)
+                       ("channel" . ,channel)
+                       ("text" . ,text)
+                       ("as_user" . "false")
+                       ("username" . "PacktKeeper"))))
+
+(defun encode-space (uri)
+  (coerce
+   (loop for char across uri
+         if (eq char #\Space)
+         collect #\% and
+         collect #\2 and
+         collect #\0
+         else
+         collect char)
+   'string))
+
+(defun main (&rest argv)
+  (declare (ignorable argv))
+  (let ((latest
+         (map 'list
+              (lambda (e) (if (string= (get-href e) "#")
+                              (cons :unavailable (get-day e))
+                              (cons :available (format nil "https:~A" (get-img e)))))
+              +aseq+)))
+    (loop for book in (diff cache latest)
+          if (eq (car book) :available)
+          do (post-message "#general"
+                           (format nil "~A~%Now available new book!~%~A"
+                                   +url+
+                                   (encode-space (cdr book)))
+                           +token+))
+    (save-cache latest)))
+;;; vim: set ft=lisp lisp:

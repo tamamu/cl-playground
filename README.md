@@ -25,3 +25,6 @@ CLで書いた何か。
 多項式曲線フィッティング
 
 ![多項式曲線フィッティング](fitting/fitting.png)
+
+##### PACKT FREE
+Packt Free Books Alert
