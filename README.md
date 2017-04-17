@@ -28,3 +28,6 @@ CLで書いた何か。
 
 ##### PACKT FREE
 Packt Free Books Alert
+
+##### K-NN
+k-nearest neighbor
