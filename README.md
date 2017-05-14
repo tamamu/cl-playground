@@ -31,3 +31,6 @@ Packt Free Books Alert
 
 ##### K-NN
 k-nearest neighbor
+
+##### ID3
+Iterative Dichotomiser 3
