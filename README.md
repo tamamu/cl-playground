@@ -34,3 +34,6 @@ k-nearest neighbor
 
 ##### ID3
 Iterative Dichotomiser 3
+
+##### PCA
+Principal Component Analysis
