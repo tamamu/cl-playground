@@ -6,6 +6,9 @@
 (defparameter +data-cache-path+
   (merge-pathnames "iris.data" (truename "./")))
 
+(defparameter +output-path+
+  (merge-pathnames "reducted.data" (truename "./")))
+
 (defconstant +iris-data-url+
   "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data")
 
@@ -48,8 +51,12 @@
                          (subseq (split line #\,) 0 4)))
       'vector)))
 
+(defun mean (vec)
+  (let ((len (length vec)))
+    (/ (loop for x across vec sum x) len)))
+(assert (= 3 (mean #(1 2 3 4 5))))
 
-(defun mean (data)
+(defun mmean (data)
   (let* ((rows (length data))
          (cols (length (aref data 0)))
          (sum (make-array cols)))
@@ -59,9 +66,9 @@
     (loop for i from 0 below cols
           do (setf (aref sum i) (float (/ (aref sum i) rows))))
     sum))
-(assert (equalp #(5.0 3.0) (mean #(#(1 3)
-                                   #(6 4)
-                                   #(8 2)))))
+(assert (equalp #(5.0 3.0) (mmean #(#(1 3)
+                                    #(6 4)
+                                    #(8 2)))))
 
 (defun make-unit-matrix (w h)
   (let ((mat (make-array h)))
@@ -148,21 +155,32 @@
       (values vec eig))))
 
 (defun transpose (mat)
-  (let* ((w (length (aref mat 0)))
-         (h (length mat))
-         (new (make-array w)))
-    (loop for y from 0 below w
-          do (setf (aref new y) (make-array h))
-          do (loop for x from 0 below h
-                   for mv = (mref mat x y)
-                   do (setf (aref (aref new y) x) mv)))
-    new))
+  (if (typep (aref mat 0) 'vector)
+    (let* ((w (length (aref mat 0)))
+           (h (length mat))
+           (new (make-array w)))
+      (loop for y from 0 below w
+            do (setf (aref new y) (make-array h))
+            do (loop for x from 0 below h
+                     for mv = (mref mat x y)
+                     do (setf (aref (aref new y) x) mv)))
+      new)
+    (let* ((h (length mat))
+           (new (make-array h)))
+      (loop for y from 0 below h
+            do (setf (aref new y)
+                     (make-array 1 :initial-element (aref mat y))))
+      new)))
 (assert (equalp #(#(1 2 3)
                   #(4 5 6)
                   #(7 8 9))
                 (transpose #(#(1 4 7)
                              #(2 5 8)
                              #(3 6 9)))))
+(assert (equalp #(#(1)
+                  #(2)
+                  #(3))
+                (transpose #(1 2 3))))
 
 (defun dot (mat1 mat2)
   (assert (= (length (aref mat1 0))
@@ -230,17 +248,139 @@
                       #(30 80))
                     #(#(10 20)))))
 
+(defmethod m/ ((numer vector) (denom number))
+  (let* ((w (length (aref numer 0)))
+         (h (length numer))
+         (result (make-array h)))
+    (loop for y from 0 below h
+          do (setf (aref result y) (copy-seq (aref numer y))))
+    (loop for y from 0 below h
+          for row = (aref result y)
+          do (loop for x from 0 below w
+                   do (setf (aref row x) (/ (aref row x) denom))))
+    result))
+(assert (equalp #(#(1 2 3)
+                  #(4 5 6))
+                (m/ #(#(10 20 30)
+                      #(40 50 60))
+                    10)))
+
+(defun msortv (mat order)
+  (let* ((rows (length mat))
+         (cols (length order))
+         (res (make-array rows)))
+    (loop for row from 0 below rows
+          for mrow = (aref mat row)
+          for v = (make-array cols)
+          do (loop for i from 0 below cols
+                   do (setf (aref v i) (aref mrow (elt order i))
+                            (aref res row) v)))
+    res))
+(assert (equalp #(#(1 2 3)
+                  #(4 5 6))
+                (msortv #(#(2 3 1)
+                          #(5 6 4))
+                        '(2 0 1))))
+
+(defun argsort (vec &optional (pred #'>))
+  (let ((tmp (copy-seq vec))
+        (sorted (sort (copy-seq vec) pred))
+        (arg (make-array (length vec))))
+    (loop for i from 0 below (length vec)
+          for pos = (position (aref sorted i) tmp)
+          do (setf (aref arg i) pos
+                   (aref tmp pos) nil))
+    arg))
+(assert (equalp #(2 0 4 1 3)
+                (argsort #(42 9 64 2 30))))
+
+(defun copy-mat (mat)
+  (let* ((rows (length mat))
+         (cols (length (aref mat 0)))
+         (new (make-array rows)))
+    (loop for row from 0 below rows
+          for mrow = (aref mat row)
+          for v = (copy-seq (aref mat row))
+          do (loop for col from 0 below cols
+                   do (setf (aref v col) (aref mrow col)))
+          do (setf (aref new row) v))
+    new))
+(assert (let* ((origin #(#(1 2 3)
+                         #(4 5 6)))
+               (copied (copy-mat origin)))
+          (setf (aref (aref copied 0) 0) 0)
+          (not (equalp origin copied))))
+
+(defun m- (mat vec)
+  (let* ((rows (length mat))
+        (cols (length (aref mat 0)))
+        (new (copy-mat mat)))
+    (loop for row from 0 below rows
+          do (loop for col from 0 below cols
+                   do (decf (mref new row col)
+                            (aref vec col))))
+    new))
+(assert (equalp #(#(1 2 3)
+                  #(4 5 6))
+                (m- #(#(5 7 9)
+                      #(8 10 12))
+                    #(4 5 6))))
+
+(defun a- (arr v)
+  (let ((len (length arr))
+        (new (copy-seq arr)))
+    (loop for i from 0 below len
+          do (decf (aref new i) v))
+    new))
+(assert (equalp #(1 2 3)
+                (a- #(2 3 4) 1)))
+
+(defun mslicev (mat start end)
+  (let* ((rows (length mat))
+         (new (make-array rows)))
+    (loop for row from 0 below rows
+          for mrow = (aref mat row)
+          do (setf (aref new row)
+                   (subseq mrow start end)))
+    new))
+(assert (equalp #(#(2 3)
+                  #(5 6))
+                (mslicev #(#(1 2 3)
+                           #(4 5 6))
+                         1 3)))
+
+(defun take (arr len)
+  (let ((new (make-array len)))
+    (loop for i from 0 below len
+          do (setf (aref new i) (aref arr i)))
+    new))
+(assert (equalp #(1 2 3)
+                (take #(1 2 3 4 5 6) 3)))
+
 ;(defun pca (dim, data)
 ;  (let* ((m (mean data))
 ;         (data ()))))
 
 (defvar data (dataload +iris-data-url+))
 (print data)
-(let* ((m (mean data))
-       (cov (m/ (dot (transpose data) data) m))
+(let* ((x-bar (transpose
+                (concatenate 'vector
+                             (loop for row across (transpose data)
+                                   collect (a- row (mean row))))))
+       (cov (m/ (dot (transpose x-bar) x-bar) (length data)))
        (e nil)
        (ev nil))
   (multiple-value-setq (e ev)
     (eigen cov 0.0001))
-  (print e)
-  (print ev))
+  (format t "Eigen Value:~%~A~%" e)
+  (format t "Eigen Vectors:~%~A~%" ev)
+  (let* ((axis (msortv (transpose ev) (argsort e)))
+         (components (take axis 2))
+         (after (dot x-bar (transpose components)))
+         (rows (length after)))
+    (format t "Feature reducted:~%~A~%" after)
+    (with-open-file (out +output-path+ :direction :output :if-exists :supersede)
+      (loop for row from 0 below rows
+            for mrow = (aref after row)
+            do (format out "~A~A~A~%" (aref mrow 0) #\Tab (aref mrow 1))))
+  ))
