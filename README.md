@@ -37,3 +37,6 @@ Iterative Dichotomiser 3
 
 ##### PCA
 Principal Component Analysis
+
+##### FORMULA
+Reader macro to write a formula as infix notation
