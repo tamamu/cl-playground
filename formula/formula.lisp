@@ -20,14 +20,17 @@
             t
             (> p1 p2)))))
 
+(defun formulap (expr)
+  (and (consp expr) (not (fboundp (car expr)))))
+
 (defun transform-formula (body)
   "Transform infix formula to prefix formula"
   (let ((left (pop body)))
-    (when (consp left)
+    (when (formulap left)
           (setq left (transform-formula left)))
     (loop for op1 = (pop body)
           for right1 = (pop body)
-          when (consp right1)
+          when (formulap right1)
           do (setq right1 (transform-formula right1))
           until (null op1)
           do (loop for op2 = (car body)
@@ -35,7 +38,7 @@
                    if (operator> op2 op1)
                    do (setq op2 (pop body))
                       (let ((right2 (pop body)))
-                        (when (consp right2)
+                        (when (formulap right2)
                               (setq right2 (transform-formula right2)))
                         (setq right1 (list op2 right1 right2)))
                    else
