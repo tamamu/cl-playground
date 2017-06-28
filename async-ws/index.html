@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title></title>
+</head>
+<body>
+  <script>
+    const TOKEN = '9a7bc41d1ee90f31';
+    const FILE_PATH = '/home/tamamu/lisp-dev/cl-playground/async-ws/index.html';
+    const SOURCE = '(deftask (id)' +
+                   '  (dotimes (i 50)' +
+                   '    (print i)' +
+                   '    (checkpoint (id i)' +
+                   '      (sleep 0.1)' +
+                   '      "killed")))';
+
+    class AlertSocket {
+
+      static generateInterval(k) {
+        let maxInterval = (Math.pow(2, k) - 1) * 1000;
+
+        if (maxInterval > 30*1000) {
+          maxInterval = 30*1000;
+        }
+
+        return Math.random() * maxInterval;
+      }
+
+      constructor(token, optional, interval) {
+        this.connection = null;
+        this.id = null;
+        this.attempts = 1;
+        this.wantToKill = false;
+        this.token = token;
+        this.optional = optional;
+        this.updateInterval = interval;
+      }
+
+      requestInit(conn, value) {
+        console.log('init');
+        console.log(value);
+        let sender = JSON.stringify({
+          message: 'init',
+          token: this.token,
+          optional: this.optional,
+          value: value
+        });
+        conn.send(sender);
+      }
+
+      requestRecv() {
+        console.log('recv')
+        let sender = JSON.stringify({
+          message: 'recv',
+          id: this.id
+        });
+        this.connection.send(sender);
+      }
+
+      requestKill() {
+        let sender = JSON.stringify({
+          message: 'kill',
+          id: this.id
+        });
+        this.connection.send(sender);
+      }
+
+      open(value) {
+        if (this.connection === null) {
+          let conn = new WebSocket('ws:localhost:5000');
+          conn.onopen = () => {
+            this.connection = conn;
+            this.wantToKill = false;
+            this.requestInit(conn, value);
+          }
+          if (this.id === null) {
+            conn.onclose = this.retryInit.bind(this);
+            conn.onmessage = this.init.bind(this);
+          } else {
+            conn.onclose = this.retryRecv.bind(this);
+            conn.onmessage = this.recv.bind(this);
+          }
+        }
+      }
+
+      retryInit() {
+        this.attempts += 1;
+        if (this.id === null) {
+          setTimeout(this.open, AlertSocket.generateInterval(this.attempts));
+        } else {
+          this.attempts = 1;
+          this.connection.onclose = null;
+          this.connection = null;
+        }
+      }
+
+      init(e) {
+        let json = JSON.parse(e.data);
+        if (json.message === 'init') {
+          this.id = json.id;
+          this.connection.onmessage = this.recv.bind(this);
+          this.connection.onclose = this.retryRecv.bind(this);
+          this.requestRecv()
+        } else {
+          this.connection.onmessage = null;
+          this.connection.onclose = null;
+          this.connection = null;
+          throw Error("Can't receive init message");
+        }
+      }
+
+      retryRecv() {
+        this.attempts += 1;
+        if (!this.wantToKill) {
+          setTimeout(this.open, AlertSocket.generateInterval(this.attempts));
+        } else {
+          this.attempts = 1;
+          this.connection.onclose = null;
+          this.connection = null;
+        }
+      }
+
+      recv(e) {
+        let json = JSON.parse(e.data);
+        this.attempts = 1;
+        console.log(`From ${this.id}: ${e.data}`);
+        switch (json.message) {
+          case 'exit':
+            console.log('exited');
+            this.id = null;
+            this.wantToKill = true;
+            this.connection.onmessage = null;
+            this.connection.onclose = null;
+            this.connection.close();
+            this.connection = null;
+            break;
+          case 'update':
+            setTimeout(() => {
+              if (this.connection) {
+                if (this.wantToKill) {
+                  this.requestKill();
+                  this.wantToKill = false;
+                } else {
+                  this.requestRecv();
+                }
+              }
+            }, this.updateInterval);
+            break;
+          default:
+            this.id = null;
+            this.wantToKill = true;
+            this.connection.onmessage = null;
+            this.connection.onclose = null;
+            this.connection.close();
+            this.connection = null;
+            throw Error("Can't receive update message");
+            break;
+        }
+      }
+
+      kill() {
+        this.wantToKill = true;
+      }
+
+    }
+
+    let s = new AlertSocket(TOKEN, FILE_PATH, 1000);
+    s.open(SOURCE);
+  </script>
+</body>
+</html>
