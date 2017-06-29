@@ -8,57 +8,49 @@
   (:use :cl :websocket-driver :bordeaux-threads))
 (in-package :async-alert-server)
 
+(defvar *taskbase*
+  (make-hash-table :test #'equal))
+
 (defstruct task-entity
-  (initial-value nil)
   (body nil)
   (output nil)
   (should-kill-p nil)
   (exit-p nil)
   (thread nil))
 
-(defstruct task-memory
-  (data nil)
-  (should-kill-p nil)
-  (exit-p nil)
-  (thread nil))
-
-(defvar *share*
-  (make-hash-table :test #'equal))
-
-(defun make-task (id initial-value)
-  (setf (gethash id *share*)
-        (make-task-memory :data initial-value)))
+(defun regist-task (id task)
+  (setf (gethash id *taskbase*) task))
 
 (defun exists-task (id)
-  (gethash id *share* nil))
+  (gethash id *taskbase* nil))
 
-(defun task-attach-thread (id fun)
-  (setf (task-memory-thread (gethash id *share*))
-                            (make-thread fun)))
+(defun attach-task-thread (id)
+  (setf (task-entity-thread (gethash id *taskbase*))
+        (make-thread (task-entity-body (gethash id *taskbase*)))))
 
 (defun get-task-thread (id)
-  (task-memory-thread (gethash id *share*)))
+  (task-entity-thread (gethash id *taskbase*)))
 
 (defun set-task-kill (id)
-  (setf (task-memory-should-kill-p (gethash id *share*)) t))
+  (setf (task-entity-should-kill-p (gethash id *taskbase*)) t))
 
 (defun set-task-exit (id)
-  (setf (task-memory-exit-p (gethash id *share*)) t))
+  (setf (task-entity-exit-p (gethash id *taskbase*)) t))
 
 (defun get-task-exit (id)
-  (task-memory-exit-p (gethash id *share*)))
+  (task-entity-exit-p (gethash id *taskbase*)))
 
-(defun should-task-kill (id)
-  (task-memory-should-kill-p (gethash id *share*)))
+(defun should-task-kill-p (id)
+  (task-entity-should-kill-p (gethash id *taskbase*)))
 
-(defun set-share-hash (id value)
-  (setf (task-memory-data (gethash id *share*)) value))
+(defun set-task-output (id value)
+  (setf (task-entity-output (gethash id *taskbase*)) value))
 
-(defun delete-share-hash (id)
-  (remhash id *share*))
+(defun delete-task (id)
+  (remhash id *taskbase*))
 
-(defun get-share-hash (id)
-  (task-memory-data (gethash id *share*)))
+(defun get-task-output (id)
+  (task-entity-output (gethash id *taskbase*)))
 
 (defun macroexpand-all (form)
   (let ((form (macroexpand form)))
@@ -66,17 +58,17 @@
 
 (defmacro checkpoint (value &optional (kill nil))
   "Alert client that has the id to progress"
-  `(if (should-task-kill $<id>)
+  `(if (should-task-kill-p $<id>)
        (progn
          (unless (null ,kill)
-           (set-share-hash $<id> ,kill))
+           (set-task-output $<id> ,kill))
          (return))
-       (set-share-hash $<id> ,value)))
+       (set-task-output $<id> ,value)))
 
 (defmacro runtask (initial &body body)
   "Run task which takes an id asynchronous"
   (make-task-entity
-    :initial-value initial
+    :output initial
     :body
     `(let (($<id> id-form)
            ($<result> nil))
@@ -84,7 +76,7 @@
          (unwind-protect
            (setf $<result> (progn ,@body))
            (unless (null $<result>)
-             (set-share-hash $<id> $<result>)
+             (set-task-output $<id> $<result>)
              (set-task-exit $<id>)))))))
 
 (defun replace-all (src dest form)
@@ -111,11 +103,11 @@
   "Alert to client that has the id"
   (send ws (jsown:to-json
              `(:obj ("message" . "update")
-                    ("value" . ,(get-share-hash id)))))
+                    ("value" . ,(get-task-output id)))))
   (when (or (get-task-exit id)
-            (should-task-kill id))
+            (should-task-kill-p id))
       (progn
-        (delete-share-hash id)
+        (delete-task id)
         (send ws (jsown:to-json
                    `(:obj ("message" . "exit")))))))
 
@@ -130,6 +122,14 @@
     (if (>= alen blen)
       (string= (subseq a 0 blen) b)
       nil)))
+
+(defun attach-task (id task)
+  (->$ (task-entity-body task)
+       (attach-checkpoint)
+       (macroexpand-all)
+       (attach-id id)
+       (eval)
+       (setf (task-entity-body task))))
 
 (defvar *server*
   (lambda (env)
@@ -150,19 +150,15 @@
                                   (eval))))
                     (when (task-entity-p lo)
                       (progn
-                        (->$ (task-entity-body lo)
-                             (attach-checkpoint)
-                             (macroexpand-all)
-                             (attach-id id)
-                             (eval)
-                             (setf (task-entity-body lo)))
-                        (when (null (exists-task id))
-                          (progn
-                            (make-task id (task-entity-initial-value lo))
-                            (task-attach-thread id (task-entity-body lo))))
+                        (unless (null (exists-task id))
+                          (set-task-kill id)
+                          (join-thread (get-task-thread id)))
+                        (attach-task id lo)
+                        (regist-task id lo)
+                        (attach-task-thread id))
                         (send ws (jsown:to-json
                                    `(:obj ("message" . "init")
-                                          ("id" . ,id)))))))
+                                          ("id" . ,id))))))
                   (if (string= (jsown:val json "message") "kill")
                       (let ((id (jsown:val json "id")))
                         (set-task-kill id)
