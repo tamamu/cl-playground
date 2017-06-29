@@ -8,12 +8,12 @@
   <script>
     const TOKEN = '9a7bc41d1ee90f31';
     const FILE_PATH = '/home/tamamu/lisp-dev/cl-playground/async-ws/index.html';
-    const SOURCE = '(deftask (id)' +
+    const SOURCE = '(runtask 0' +
                    '  (dotimes (i 50)' +
+                   '    (sleep 0.1)' +
                    '    (print i)' +
-                   '    (checkpoint (id i)' +
-                   '      (sleep 0.1)' +
-                   '      "killed")))';
+                   '    (checkpoint i "killed"))' +
+                   '  "exited")';
 
     class AlertSocket {
 

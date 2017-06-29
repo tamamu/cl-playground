@@ -8,6 +8,14 @@
   (:use :cl :websocket-driver :bordeaux-threads))
 (in-package :async-alert-server)
 
+(defstruct task-entity
+  (initial-value nil)
+  (body nil)
+  (output nil)
+  (should-kill-p nil)
+  (exit-p nil)
+  (thread nil))
+
 (defstruct task-memory
   (data nil)
   (should-kill-p nil)
@@ -17,9 +25,9 @@
 (defvar *share*
   (make-hash-table :test #'equal))
 
-(defun make-task (id)
+(defun make-task (id initial-value)
   (setf (gethash id *share*)
-        (make-task-memory)))
+        (make-task-memory :data initial-value)))
 
 (defun exists-task (id)
   (gethash id *share* nil))
@@ -52,34 +60,32 @@
 (defun get-share-hash (id)
   (task-memory-data (gethash id *share*)))
 
-(defmacro checkpoint ((id value) then &optional (kill nil))
+(defun macroexpand-all (form)
+  (let ((form (macroexpand form)))
+    (cons (car form) (mapcar #'macroexpand (cdr form)))))
+
+(defmacro checkpoint (value &optional (kill nil))
   "Alert client that has the id to progress"
-  `(if (should-task-kill ,id)
+  `(if (should-task-kill $<id>)
        (progn
          (unless (null ,kill)
-           (set-share-hash ,id ,kill))
+           (set-share-hash $<id> ,kill))
          (return))
-       (progn
-         (set-share-hash ,id ,value)
-         ,then)))
+       (set-share-hash $<id> ,value)))
 
-(defmacro deftask ((id) &body body)
-  "define task which takes an id"
-  `(lambda ()
-     (unwind-protect
-       (progn ,@body)
-       (set-task-exit ,id))))
-
-(defun action (id)
-  "Make task call with the id"
-  (deftask (id)
-    (format t "Start thread ~A~%" id)
-    (dotimes (i 50)
-      (checkpoint (id i)
-        (progn
-          (format t "~A: ~A~%" id i)
-          (sleep 0.1))
-        "killed"))))
+(defmacro runtask (initial &body body)
+  "Run task which takes an id asynchronous"
+  (make-task-entity
+    :initial-value initial
+    :body
+    `(let (($<id> id-form)
+           ($<result> nil))
+       (lambda ()
+         (unwind-protect
+           (setf $<result> (progn ,@body))
+           (unless (null $<result>)
+             (set-share-hash $<id> $<result>)
+             (set-task-exit $<id>)))))))
 
 (defun replace-all (src dest form)
   (mapcar (lambda (obj)
@@ -92,11 +98,14 @@
                     obj)))
           form))
 
-(defmacro attach-id (id &body body)
-  (let ((replaced (replace-all 'deftask 'deftask
-                  (replace-all 'checkpoint 'checkpoint
-                  (replace-all 'id id body)))))
-  replaced))
+(defun attach-runtask (form)
+  (replace-all 'runtask 'runtask form))
+
+(defun attach-checkpoint (form)
+  (replace-all 'checkpoint 'checkpoint form))
+
+(defun attach-id (id form)
+  (replace-all 'id-form id form))
 
 (defun sender (ws id)
   "Alert to client that has the id"
@@ -109,6 +118,11 @@
         (delete-share-hash id)
         (send ws (jsown:to-json
                    `(:obj ("message" . "exit")))))))
+
+(defmacro ->$ (value &body forms)
+  (reduce (lambda (acc form)
+            (append form (list acc)))
+          forms :initial-value value))
 
 (defun startswith (a b)
   (let ((alen (length a))
@@ -126,21 +140,29 @@
           (lambda (message)
             (let ((json (jsown:parse message)))
               (if (string= (jsown:val json "message") "init")
-                  (let* ((id (concatenate 'string
-                                          addr ":"
-                                          port ":"
-                                          (jsown:val json "token")
-                                          ":"
-                                          (jsown:val json "optional")))
-                         (lo (read-from-string (jsown:val json "value")))
-                         (lst (eval `(attach-id ,id ,@lo))))
-                    (when (null (exists-task id))
+                  (let* ((id (concatenate 'string addr
+                                              ":" port
+                                              ":" (jsown:val json "token")
+                                              ":" (jsown:val json "optional")))
+                         (lo (->$ (jsown:val json "value")
+                                  (read-from-string)
+                                  (attach-runtask)
+                                  (eval))))
+                    (when (task-entity-p lo)
                       (progn
-                        (make-task id)
-                        (task-attach-thread id lst)))
-                    (send ws (jsown:to-json
-                               `(:obj ("message" . "init")
-                                      ("id" . ,id)))))
+                        (->$ (task-entity-body lo)
+                             (attach-checkpoint)
+                             (macroexpand-all)
+                             (attach-id id)
+                             (eval)
+                             (setf (task-entity-body lo)))
+                        (when (null (exists-task id))
+                          (progn
+                            (make-task id (task-entity-initial-value lo))
+                            (task-attach-thread id (task-entity-body lo))))
+                        (send ws (jsown:to-json
+                                   `(:obj ("message" . "init")
+                                          ("id" . ,id)))))))
                   (if (string= (jsown:val json "message") "kill")
                       (let ((id (jsown:val json "id")))
                         (set-task-kill id)
