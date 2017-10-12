@@ -43,3 +43,6 @@ Reader macro to write a formula as infix notation
 
 ##### ASYNC-WS
 Asynchronous task alert server and client
+
+##### NLP
+Natural language processing in Japanese
