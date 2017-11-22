@@ -46,3 +46,6 @@ Asynchronous task alert server and client
 
 ##### NLP
 Natural language processing in Japanese
+
+##### k-medoids
+k-medoids method
