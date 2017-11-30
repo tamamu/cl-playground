@@ -49,3 +49,6 @@ Natural language processing in Japanese
 
 ##### k-medoids
 k-medoids method
+
+##### som
+Self-Organizing Map
