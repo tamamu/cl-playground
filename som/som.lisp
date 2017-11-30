@@ -31,6 +31,9 @@
                           mind dist)))))
     (values x y)))
 
+(defun neighbor (tm dist)
+  ())
+
 (defun drop (mat x y v rate &key (alpha 0.5))
   (let ((dim (array-dimensions mat))
         (num-of-features (length (aref mat 0 0))))
@@ -108,7 +111,7 @@
                 (setf min v)))
         (dotimes (j num-of-instances)
           (setf (aref (aref result j) i)
-                (float (/ (- (aref (aref dataset j) i) min) max))))))
+                (float (/ (- (aref (aref dataset j) i) min) (- max min)))))))
     result))
 
 (defun main (path &key (w 6) (h 6) (rate 0.2))
