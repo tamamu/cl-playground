@@ -52,3 +52,6 @@ k-medoids method
 
 ##### som
 Self-Organizing Map
+
+##### MACRO
+Macros
