@@ -58,3 +58,6 @@ Macros
 
 ##### TRAIT
 Experimental trait macros
+
+##### NAND
+Make OR from NAND
