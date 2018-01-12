@@ -55,3 +55,6 @@ Self-Organizing Map
 
 ##### MACRO
 Macros
+
+##### TRAIT
+Experimental trait macros
