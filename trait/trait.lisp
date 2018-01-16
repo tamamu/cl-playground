@@ -40,7 +40,7 @@
                     (gethash statement-name-string *trait-method-table*)
                     trait-name)
               (eval `(defmacro ,statement-name (&rest rest)
-                       (let* ((self (first rest))
+                       (let* ((self (let ((s (first rest))) (if (symbolp s) (symbol-value s) s)))
                               (trait-name (gethash ,statement-name-string *trait-method-table*))
                               (trait (gethash trait-name *trait-table*))
                               (trait-method (gethash ,statement-name-string (trait-methods trait)))
