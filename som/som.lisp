@@ -1,5 +1,7 @@
+(setf *read-default-float-format* 'double-float)
+
 (defun d (x y)
-  (sqrt
+  (progn
     (loop for xi across x
           for yi across y
           sum (expt (- xi yi) 2))))
@@ -24,6 +26,7 @@
           with mind = (funcall distance data (aref mat 0 0)) do
           (loop for j from 0 below (second dim)
                 for v = (aref mat i j) do
+                ;(format t "(~A,~A):~A~%" i j v)
                 (let ((dist (funcall distance data v)))
                   (when (< dist mind)
                     (setf x j
@@ -31,10 +34,18 @@
                           mind dist)))))
     (values x y)))
 
-(defun neighbor (tm dist)
-  ())
+(defun neighborhood (num-of-teachers size tm)
+  (* (/ size 2) (exp (/ (- tm) (/ num-of-teachers 4)))))
 
-(defun drop (mat x y v rate &key (alpha 0.5))
+(defun learning-radius (num-of-teachers size tm dist)
+  (let ((d2 (expt (- dist) 2))
+        (n2 (expt (neighborhood num-of-teachers size tm) 2)))
+    (exp (/ d2 (* 2 n2)))))
+
+(defun learning-ratio (num-of-teachers tm &key (rate 0.2))
+  (* rate (exp (/ (- tm) (/ num-of-teachers 4)))))
+
+(defun drop (mat x y v rate num-of-teachers tm)
   (let ((dim (array-dimensions mat))
         (num-of-features (length (aref mat 0 0))))
     (loop for i from 0 below (first dim) do
@@ -43,22 +54,29 @@
                              (abs (- x j)))
                 for data = (aref mat x y) do
                 (loop for k from 0 below num-of-features do
-                      (setf (aref data k)
-                            (* (if (zerop n)
-                                   1
-                                   (/ alpha n))
-                               rate
-                               (- (aref v k) (aref data k)))))))))
+                      (let* ((ratio (learning-ratio num-of-teachers tm :rate rate))
+                             (radius (learning-radius num-of-teachers (first dim) tm n))
+                             (diff (- (aref v k) (aref data k)))
+                             (next (+ (aref data k) (* ratio radius diff))))
+                        (setf (aref data k)
+                              (cond
+                                ((< 0.99d0 next) 1.0d0)
+                                ((< next 0.01d0) 0.0d0)
+                                (t next)))
+                        ;(format t "ratio:~A,radius:~A,diff:~A~%" ratio radius diff)
+                        ))))))
 
-(defun som (dataset &key (w 6) (h 6) (rate 0.2))
+(defun som (dataset &key (w 6) (h 6) (rate 0.2d0))
   (let* ((num-of-features (length (aref dataset 0)))
          (num-of-instances (length dataset))
          (nodes (rand-matrix w h num-of-features)))
     (dotimes (p 5000)
+          (format t "~A~%" nodes)
     (loop for i from 0 below num-of-instances
           for data = (aref dataset i) do
+          ;(format t "~A/5000 in ~A~%" p i)
           (multiple-value-bind (x y) (find-nearest-index nodes data)
-            (drop nodes x y data rate))))
+            (drop nodes x y data rate num-of-instances p))))
     nodes))
 
 (defun split (str delim)
@@ -111,10 +129,10 @@
                 (setf min v)))
         (dotimes (j num-of-instances)
           (setf (aref (aref result j) i)
-                (float (/ (- (aref (aref dataset j) i) min) (- max min)))))))
+                (/ (- (aref (aref dataset j) i) min) (- max min))))))
     result))
 
-(defun main (path &key (w 6) (h 6) (rate 0.2))
+(defun main (path &key (w 6) (h 6) (rate 0.2d0))
   (let ((result (som (normalize (loadraw path #\,)) :w w :h h :rate rate)))
     (loop for i from 0 below w do
           (loop for j from 0 below h do
