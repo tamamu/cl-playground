@@ -101,6 +101,12 @@
        (lambda (row) (map 'vector #'read-from-string row))
        (loadtxt path delimiter)))
 
+(defun calc-sse (dataset centers membership)
+  (loop for center in centers ;; for all centers
+        sum (loop for i from 0 below (length membership) ;; for all members in the cluster
+                  if (= center (aref membership i))
+                  sum (d (aref dataset i) (aref dataset center)))))
+
 (defun main (path)
   (let* ((dataset (loadraw path #\,))
          (height (length dataset))
@@ -109,7 +115,7 @@
       (k-medoids 3 dataset)
       (declare (ignorable medoids))
       (with-open-file (out "./distance" :direction :output :if-exists :supersede)
-        (format out "~A~%" distance))
+        (format out "Distance:~A~%SSE:~A~%" distance (calc-sse dataset medoids assign)))
       (with-open-file (out "./output" :direction :output :if-exists :supersede)
         (dotimes (i height)
           (format out "~A" (aref assign i))
